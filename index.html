@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>copy_fixed_files.bat 生成（貼り付け専用）</title>
+<style>
+  :root{--bg:#0b1220;--panel:#111a2b;--muted:#7e8aa6;--text:#e7ecf8;--accent:#3aa3ff;--ok:#21c07a;--warn:#ffc14d}
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1220,#0b1220 60%,#0e1629);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif}
+  .wrap{max-width:880px;margin:22px auto;padding:0 16px}
+  .card{background:var(--panel);border:1px solid rgba(255,255,255,.06);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .head{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:10px}
+  .head h1{font-size:19px;margin:0}
+  .body{padding:20px;display:grid;gap:16px}
+  .muted{color:var(--muted);font-size:13px}
+  textarea,pre{width:100%;background:#0a1222;border:1px solid rgba(255,255,255,.14);color:var(--text);border-radius:12px;padding:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  textarea{min-height:180px;resize:vertical}
+  pre{white-space:pre;overflow:auto}
+  .btns{display:flex;flex-wrap:wrap;gap:10px}
+  button{appearance:none;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
+  .primary{background:var(--accent);color:#02152a}
+  .ok{background:var(--ok);color:#032312}
+  .warn{background:var(--warn);color:#231a03}
+</style>
+</head>
+<body>
+  <div class="wrap card">
+    <div class="head">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M8 7h8M8 12h8M8 17h5" stroke="#3aa3ff" stroke-width="2" stroke-linecap="round"/></svg>
+      <h1>copy_fixed_files.bat 生成（貼り付け専用）</h1>
+    </div>
+    <div class="body">
+      <div class="muted">エクスプローラで対象ファイルを選択 → <b>Shift+右クリック → 「パスのコピー」</b> → 下に貼り付け。1 行に 1 件。引用符付き / なしどちらでもOK。<br><br>例：<br>C:\Users\User\Desktop\婚活アプリ作成作業\BillingWebView.html<br>C:\Users\User\Desktop\婚活アプリ作成作業\LoginWebView.html<br>C:\Users\User\KonkatuAPP\Assets\BillingWebView.cs<br>C:\Users\User\KonkatuAPP\Assets\LoginWebView.cs</div>
+
+      <textarea id="paste" placeholder="\"C:\\Users\\User\\Documents\\file1.txt\"\nC:\\data\\config.json\nD:\\project\\src\\main.cs"></textarea>
+
+      <div class="btns">
+        <button id="gen" class="primary">バッチ内容を生成</button>
+        <button id="copy" class="ok">全文をコピー</button>
+      </div>
+
+      <div>
+        <div class="muted">生成された <code>set "SRC[n]=..."</code> 行</div>
+        <pre id="lines">（未生成）</pre>
+      </div>
+
+      <div>
+        <div class="muted">copy_fixed_files.bat （プレビュー）</div>
+        <pre id="preview"></pre>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const pasteEl = document.getElementById('paste');
+  const linesEl = document.getElementById('lines');
+  const prevEl  = document.getElementById('preview');
+  const genBtn  = document.getElementById('gen');
+  const copyBtn = document.getElementById('copy');
+  
+ const BAT_TEMPLATE = `@echo off\r\nsetlocal EnableExtensions\r\nchcp 65001 >nul\r\n\r\nrem === このBATがあるフォルダに出力 ===\r\nset "DEST_DIR=%~dp0"\r\n\r\nrem === コピーしたいファイルの絶対パスを下に追加 ===\r\nrem    （例：set "SRC[1]=C:\\\\Users\\\\User\\\\Documents\\\\sample.txt"）\r\n\r\n{{SRC_LINES}}\r\n\r\nrem =========================================\r\necho [*] 出力先: "%DEST_DIR%"\r\necho.\r\n\r\nsetlocal enabledelayedexpansion\r\nset /a COPIED=0,FAILED=0,NOTFOUND=0\r\n\r\nfor /L %%I in (1,1,999) do (\r\n    call set "SRC_FILE=%%SRC[%%I]%%"\r\n    if not defined SRC_FILE goto DONE\r\n    echo --- "!SRC_FILE!"\r\n    if exist "!SRC_FILE!" (\r\n        copy /Y "!SRC_FILE!" "%DEST_DIR%" >nul\r\n        if errorlevel 1 (\r\n            echo [!] コピー失敗 → "!SRC_FILE!"\r\n            set /a FAILED+=1\r\n        ) else (\r\n            echo [OK] コピー完了 → "%DEST_DIR%"\r\n            set /a COPIED+=1\r\n        )\r\n    ) else (\r\n        echo [x] 見つかりません → "!SRC_FILE!"\r\n        set /a NOTFOUND+=1\r\n    )\r\n)\r\n\r\n:DONE\r\necho.\r\necho ===== 結果 =====\r\necho   成功: %%COPIED%%\r\necho   失敗: %%FAILED%%\r\necho   見つからず: %%NOTFOUND%%\r\necho.\r\necho 何かキーを押すと閉じます...\r\nendlocal`;
+
+  function normalizePath(p){
+    if(!p) return '';
+    p = p.trim();
+    // remove wrapping quotes if both ends
+    if((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))){
+      p = p.slice(1,-1);
+    }
+    // convert forward slashes to backslashes
+    p = p.replace(/\//g, '\\');
+    return p;
+  }
+
+  function buildSrcLines(absList){
+    if(absList.length===0) return '（未生成）';
+    return absList.map((p,i)=>`set "SRC[${i+1}]=${p}"`).join('\r\n');
+  }
+
+  function generate(){
+    const raw = pasteEl.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    const paths = [];
+    const seen = new Set();
+    for(const line of raw){
+      const p = normalizePath(line);
+      if(p && !seen.has(p)){ seen.add(p); paths.push(p); }
+    }
+    const lines = buildSrcLines(paths);
+    linesEl.textContent = lines;
+    const bat = BAT_TEMPLATE.replace('{{SRC_LINES}}', lines==='（未生成）' ? 'rem （ここに set 行が入ります）' : lines);
+    prevEl.textContent = bat;
+  }
+
+  genBtn.addEventListener('click', generate);
+
+  copyBtn.addEventListener('click', async ()=>{
+    generate();
+    const txt = prevEl.textContent || '';
+    if(!txt){ alert('まず「バッチ内容を生成」を押してください。'); return; }
+    try{
+      await navigator.clipboard.writeText(txt);
+      copyBtn.textContent = 'コピーしました✔';
+      setTimeout(()=>copyBtn.textContent='全文をコピー', 1500);
+    }catch{
+      const ta = document.createElement('textarea');
+      ta.value = txt; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      copyBtn.textContent = 'コピーしました✔';
+      setTimeout(()=>copyBtn.textContent='全文をコピー', 1500);
+    }
+  });
+})();
+</script>
+</body>
+</html>
